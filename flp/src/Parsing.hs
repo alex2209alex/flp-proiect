@@ -34,10 +34,10 @@ lambdaExp :: Parser ComplexExp
 lambdaExp
   = do
     symbol "\\"
-    x <- var
+    x <- some var
     symbol "->"
     e <- expr
-    return $ CLam x e 
+    return $ foldr CLam e x 
 -- >>> parseFirst lambdaExp "\\x -> x"
 -- Just (CLam (Var {getVar = "x"}) (CX (Var {getVar = "x"})))
 

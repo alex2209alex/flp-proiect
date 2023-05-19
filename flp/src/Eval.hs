@@ -3,6 +3,7 @@ module Eval where
 import Exp
 import Data.List ( union, delete, nub )
 import Prelude hiding (exp)
+import Sugar (desugarExp)
 
 distincte :: Eq a => [a] -> [a]
 distincte [] = []
@@ -60,13 +61,28 @@ renameVar toReplace replacement (App exp exp2) = App (renameVar toReplace replac
         
 
 substitute :: IndexedVar -> Exp -> Exp -> Exp
-substitute toReplace replacement exp = renameVar toReplace (freshVar toReplace (vars exp)) exp
+substitute toReplace replacement (X x) = 
+    if x == toReplace then
+        replacement
+    else
+        (X x)
+substitute toReplace replacement (App m n) = 
+    App (substitute toReplace replacement m) (substitute toReplace replacement n)
+substitute toReplace replacement (Lam x m) = 
+    Lam x (substitute toReplace replacement m)
+
+step :: Exp -> Maybe Exp
+step (X x) = Nothing
+step (Lam x m) = fmap (Lam x) (step m)
+step (App (Lam x m) n) = Just (substitute x n m)
+step (App m n) = case step m of
+                    Nothing -> case step n of
+                                Nothing -> Nothing
+                                Just x -> Just (App m x)
+                    Just x -> Just (App x n)
 
 normalize :: Exp -> Exp
-normalize (X x) = (X x)
-normalize (App m n) = App (normalize m) (normalize n)
-normalize (Lam x (App m n)) = normalize (substitute x n m)
-normalize (Lam x m) = Lam x (normalize m)
+normalize exp = maybe exp normalize (step exp)
 
 -- >>> normalize (X (makeIndexedVar "x"))
 -- X (IndexedVar {ivName = "x", ivCount = 0})
@@ -74,3 +90,4 @@ normalize (Lam x m) = Lam x (normalize m)
 -- >>> normalize (Lam (makeIndexedVar "x") (X (makeIndexedVar "x")))
 
 -- >>> normalize (Lam (makeIndexedVar "x") (App (X (makeIndexedVar "y")) (X (makeIndexedVar "y"))))
+-- X (IndexedVar {ivName = "y", ivCount = 0})
