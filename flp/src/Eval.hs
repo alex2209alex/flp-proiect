@@ -5,28 +5,18 @@ import Data.List ( union, delete, nub )
 import Prelude hiding (exp)
 import Sugar (desugarExp)
 
-distincte :: Eq a => [a] -> [a]
-distincte [] = []
-distincte (x:xs)   | x `elem` xs   = distincte xs
-                | otherwise     = x : distincte xs
-
 vars :: Exp -> [IndexedVar]
 vars (X x) = [x]
-vars (Lam x y) = distincte (x : vars y)
-vars (App x y) = distincte (vars x ++ vars y)
+vars (App e1 e2) = vars e1 `union` vars e2
+vars (Lam x e) = [x] `union` vars e
 
 -- >>> vars (Lam (makeIndexedVar "x") (X (makeIndexedVar "y")))
 -- [IndexedVar {ivName = "x", ivCount = 0},IndexedVar {ivName = "y", ivCount = 0}]
 
-removeItem :: Eq a => a -> [a] -> [a]
-removeItem _ []                 = []
-removeItem x (y:ys) | x == y    = removeItem x ys
-                    | otherwise = y : removeItem x ys
-
 freeVars :: Exp -> [IndexedVar]
 freeVars (X x) = [x]
-freeVars (Lam x y) = removeItem x (vars y)
-freeVars (App x y) = distincte (freeVars x ++ freeVars y)
+freeVars (App e1 e2) = freeVars e1 `union` freeVars e2
+freeVars (Lam x e) = delete x (freeVars e)
 
 -- >>> freeVars (Lam (makeIndexedVar "x") (X (makeIndexedVar "y")))
 -- [IndexedVar {ivName = "y", ivCount = 0}]
@@ -41,36 +31,38 @@ occursFree x exp = x `elem` freeVars exp
 -- True
 
 freshVar :: IndexedVar -> [IndexedVar] -> IndexedVar
-freshVar (IndexedVar name count) xs =
-    if IndexedVar name count `elem` xs then
-        freshVar (IndexedVar name (count + 1)) xs
-    else
-        IndexedVar name count
+freshVar x xs = x {ivCount = m + 1}
+   where  
+      nxs = [ivCount y | y <- x : xs, ivName y == ivName x]
+      m = maximum nxs
 
 -- >>> freshVar (makeIndexedVar "x") [makeIndexedVar "x"]
 -- IndexedVar {ivName = "x", ivCount = 1}
 
 renameVar :: IndexedVar -> IndexedVar -> Exp -> Exp
-renameVar toReplace replacement (X x) = 
-    if x == toReplace then X replacement
-    else (X x)
-renameVar toReplace replacement (Lam x exp) = 
-    if x == toReplace then Lam replacement (renameVar toReplace replacement exp)
-    else Lam x (renameVar toReplace replacement exp)
-renameVar toReplace replacement (App exp exp2) = App (renameVar toReplace replacement exp) (renameVar toReplace replacement exp2)
+renameVar toReplace replacement = go
+  where
+    go (X x)
+      = X (if x == toReplace then replacement else x)
+    go (App e1 e2) = App (go e1) (go e2)
+    go (Lam x e)
+      = Lam (if x == toReplace then replacement else x) (go e)
         
 
 substitute :: IndexedVar -> Exp -> Exp -> Exp
-substitute toReplace replacement (X x) = 
-    if x == toReplace then
-        replacement
-    else
-        (X x)
-substitute toReplace replacement (App m n) = 
-    App (substitute toReplace replacement m) (substitute toReplace replacement n)
-substitute toReplace replacement (Lam x m) = 
-    Lam x (substitute toReplace replacement m)
-
+substitute toReplace replacement = go
+  where
+    go (X x)
+      | x == toReplace = replacement
+      | otherwise = X x
+    go (App e1 e2) = App (go e1) (go e2)
+    go (Lam x e)
+      | x == toReplace = Lam x e
+      | x `occursFree` replacement =
+          let f = freshVar x (vars e `union` vars replacement)
+           in Lam f (go (renameVar x f e))
+      | otherwise = Lam x (go e)
+      
 step :: Exp -> Maybe Exp
 step (X x) = Nothing
 step (Lam x m) = fmap (Lam x) (step m)

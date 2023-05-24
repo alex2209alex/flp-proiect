@@ -30,21 +30,21 @@ succExp = X (makeIndexedVar "S")  -- S :: Natural -> Natural     successor
 fixExp = X (makeIndexedVar "fix") -- fix :: (a -> a) -> a        fixpoint fn.
 
 desugarExp :: ComplexExp -> Exp
-desugarExp (CApp x y) = App (desugarExp x) (desugarExp y)
-desugarExp (CLam x y) = Lam (desugarVar x) (desugarExp y)
 desugarExp (CX x) = X (desugarVar x)
-desugarExp (Nat n) =
-    if n == 0 then
-        X (IndexedVar "z" 0)
-    else
-        App (X (IndexedVar "S" 0)) (desugarExp (Nat (n - 1)))
-desugarExp (Let v e1 e2) =
-    App (Lam (desugarVar v) (desugarExp e2)) (desugarExp e1)
-desugarExp (LetRec v e1 e2) =
-    App (Lam (desugarVar v) (desugarExp e2)) (App (X (IndexedVar {ivName = "fix", ivCount = 0})) (Lam (desugarVar v) (desugarExp e1)))
-desugarExp (List []) = X (IndexedVar {ivName = "Nil", ivCount = 0})
-desugarExp (List xs) = App (App (X (IndexedVar {ivName = ":", ivCount = 0})) (desugarExp (head xs))) (desugarExp (List (tail xs)))
-
+desugarExp (CLam x e) = Lam (desugarVar x) (desugarExp e)
+desugarExp (CApp e1 e2) = App (desugarExp e1) (desugarExp e2)
+desugarExp (Let x ex e) = App (Lam (desugarVar x) (desugarExp e)) (desugarExp ex)
+desugarExp (LetRec f ef e)
+  = desugarExp (Let f (CApp (CX (Var "fix")) (CLam f ef)) e)
+desugarExp (List ces)
+  = foldr cons nilExp (map desugarExp ces)
+  where
+    cons e l = App (App consExp e) l
+desugarExp (Nat n)
+  = foldr successor zeroExp (replicate (fromIntegral n) ())
+  where
+    successor _ n = App succExp n
+    
 -- >>> desugarExp (CApp (CLam (Var "x") (CX (Var "y"))) (CX (Var "z")))
 -- App (Lam (IndexedVar {ivName = "x", ivCount = 0}) (X (IndexedVar {ivName = "y", ivCount = 0}))) (X (IndexedVar {ivName = "z", ivCount = 0}))
 
